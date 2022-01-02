@@ -1,5 +1,8 @@
 # EA3 Movers Stayers
 Comparing effect sizes
+[Fall 2021 Research Presentation.pdf](https://github.com/AmberJouleDay/EA3_Movers_Stayers/files/7799573/Fall.2021.Research.Presentation.pdf)
+
+
 ![aPlot6](https://user-images.githubusercontent.com/85945158/147884760-57bb0428-48f1-4b63-b6cc-27c30c51cafa.png)
 ![aPlot6B](https://user-images.githubusercontent.com/85945158/147884761-f9b32305-437d-4cdf-90d2-b999a7dec5ea.png)
 
