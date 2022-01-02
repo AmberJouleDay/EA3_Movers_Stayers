@@ -4,7 +4,7 @@ Comparing effect sizes
 [Fall 2021 Research Presentation.pdf](https://github.com/AmberJouleDay/EA3_Movers_Stayers/files/7799573/Fall.2021.Research.Presentation.pdf)
 
 
-For the following plots I used the EA3 data (excluding both UKB & 23 and Me) as the ascertainment set and 
+For the following plots I used the EA3 (𝑛 = 436987) data (excluding both UKB & 23 and Me) as the ascertainment set and 
 compared effect sizes in the Movers (𝑛=152227) and Stayers (𝑛=177519) data.  I included marginal 
 densities, a regression line (colored) and a 1-1 line (black) on each plot along with a regression fit and 
 summary for the un-grouped plots.  
