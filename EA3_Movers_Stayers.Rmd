@@ -1,0 +1,1070 @@
+---
+title: "EA3 Vs Movers&Stayers"
+author: "Amber Day"
+date: "1/2/2022"
+output: html_document
+---
+
+Loading Data
+```{r}
+# Loading data for EA3 Analysis
+require(data.table)
+require(ggplot2)
+require(devtools)
+require(gridExtra)
+require(MASS)
+require(gridExtra)
+require(ggpubr)
+require(r2symbols)
+```
+
+
+```{r}
+#   reading in the movers data
+for(i in 1:22){
+assign(paste0("movers_chr",i),read.table(paste0("C:\\Users\\achoo\\Documents\\Arbel_Research\\Education_Data\\data\\eduyears_wba_movers\\chr",i,"_all_glm.linear"), header=T, col.names=c("CHROM", "POS", "ID", "REF", "ALT", "A1", "TEST", "OBS_CT", "BETA", "SE", "T_STAT", "P")))}
+
+#   reading in the stayers data
+for(i in 1:22){
+assign(paste0("stayers_chr",i),read.table(paste0("C:\\Users\\achoo\\Documents\\Arbel_Research\\Education_Data\\data\\eduyears_wba_stayers\\chr",i,"_all_glm.linear"), header=T, col.names=c("CHROM", "POS", "ID", "REF", "ALT", "A1", "TEST", "OBS_CT", "BETA", "SE", "T_STAT", "P")))}
+  
+
+#   combining the data so it's not separated by chromosome 
+movers = do.call(rbind,mget(paste0("movers_chr", 1:22)))
+stayers = do.call(rbind,mget(paste0("stayers_chr", 1:22)))
+
+#  reading in the EA3 data 
+EA3_excl_23andMe_UKB=read.table("C:\\Users\\achoo\\Documents\\Arbel_Research\\Education_Data\\data\\EA3_excl_23andMe_UKB.meta",header=T)
+
+#  identifying the lead_snps in EA3_excl_23andMe_UKB
+EA3_excl_23andMe_UKB_lead_snps = EA3_excl_23andMe_UKB[EA3_excl_23andMe_UKB$P <= 0.00000001,]
+
+#  finding the betas for the snps in dataset EA3 that are associated with the lead snps in the movers dataset
+n=dim(EA3_excl_23andMe_UKB_lead_snps)[1]
+EA3_excl_23andMe_UKB_lead_snps$beta_movers=c(rep(0,n))
+EA3_excl_23andMe_UKB_lead_snps$EA_movers=c(rep("0",n))
+for(i in 1:n)
+{
+  if(length(which(movers$ID==EA3_excl_23andMe_UKB_lead_snps$rsID[i]))==0)
+    {
+      EA3_excl_23andMe_UKB_lead_snps$beta_movers[i]=0
+      EA3_excl_23andMe_UKB_lead_snps$EA_movers[i]=0
+    }else
+    {
+      position_movers=which(movers$ID==EA3_excl_23andMe_UKB_lead_snps$rsID[i])[1]
+      EA3_excl_23andMe_UKB_lead_snps$EA_movers[i]=movers$A1[position_movers]
+      if(EA3_excl_23andMe_UKB_lead_snps$EA[i]==EA3_excl_23andMe_UKB_lead_snps$EA_movers[i])
+        {
+           EA3_excl_23andMe_UKB_lead_snps$beta_movers[i]=movers$BETA[position_movers]
+        }else
+        {
+           EA3_excl_23andMe_UKB_lead_snps$beta_movers[i]=-1*(movers$BETA[position_movers])
+        }
+    }
+}
+
+
+#  finding the betas for the snps in dataset EA3 that are associated with the lead snps in the stayers dataset
+n=dim(EA3_excl_23andMe_UKB_lead_snps)[1]
+
+EA3_excl_23andMe_UKB_lead_snps$beta_stayers=c(rep(0,n))
+EA3_excl_23andMe_UKB_lead_snps$EA_stayers=c(rep("0",n))
+for(i in 1:n)
+{
+  if(length(which(stayers$ID==EA3_excl_23andMe_UKB_lead_snps$rsID[i]))==0)
+    {
+      EA3_excl_23andMe_UKB_lead_snps$beta_stayers[i]=0
+      EA3_excl_23andMe_UKB_lead_snps$EA_stayers[i]=0
+    }else
+    {
+      position_stayers=which(stayers$ID==EA3_excl_23andMe_UKB_lead_snps$rsID[i])[1]
+      EA3_excl_23andMe_UKB_lead_snps$EA_stayers[i]=stayers$A1[position_stayers]
+      if(EA3_excl_23andMe_UKB_lead_snps$EA[i]==EA3_excl_23andMe_UKB_lead_snps$EA_stayers[i])
+        {
+           EA3_excl_23andMe_UKB_lead_snps$beta_stayers[i]=stayers$BETA[position_stayers]
+        }else
+        {
+           EA3_excl_23andMe_UKB_lead_snps$beta_stayers[i]=-1*(stayers$BETA[position_stayers])
+        }
+    }
+}
+
+#  filtering out the rows that didn't have a matching SNP in the movers data set
+#filter requirements attained snps
+EA3_excl_23andMe_UKB_lead_snps_filter = EA3_excl_23andMe_UKB_lead_snps[EA3_excl_23andMe_UKB_lead_snps$beta_movers!=0 & EA3_excl_23andMe_UKB_lead_snps$beta_stayers!=0,]
+
+#Take 3 start
+
+# Adjusting data so betas on x-axis (EA3) are all positive and changing the sign for betas on y-axis (movers/stayers) if they were originally in q2 or q3
+n_snps = nrow(EA3_excl_23andMe_UKB_lead_snps_filter)
+# For movers
+EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers_updated = c(rep(0,n_snps))
+for(i in 1:n_snps)
+{
+  if(EA3_excl_23andMe_UKB_lead_snps_filter$BETA[i]>0)
+    {
+    EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers_updated[i]=EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers[i]
+    }else
+      {
+      EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers_updated[i]=-1*EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers[i]
+      }
+}
+
+# For stayers
+EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers_updated = c(rep(0,n_snps))
+for(i in 1:n_snps)
+{
+  if(EA3_excl_23andMe_UKB_lead_snps_filter$BETA[i]>0)
+    {
+      EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers_updated[i]=EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers[i]
+    }else
+      {
+      EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers_updated[i]=-1*EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers[i]
+      }
+}
+
+#   making the EA3 betas positive
+EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs=abs(EA3_excl_23andMe_UKB_lead_snps_filter$BETA)
+
+# Adjusting data so betas on x-axis are all positive and changing the sign for betas on y-axis if they were originally different signs for betas on x-axis
+
+# For movers
+EA3_excl_23andMe_UKB_lead_snps_filter$BETA_updated_m = c(rep(0,n_snps))
+for(i in 1:n_snps){
+  if(EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers[i]>0){
+    EA3_excl_23andMe_UKB_lead_snps_filter$BETA_updated_m[i]=EA3_excl_23andMe_UKB_lead_snps_filter$BETA[i]
+  }else{
+    EA3_excl_23andMe_UKB_lead_snps_filter$BETA_updated_m[i]=-1*EA3_excl_23andMe_UKB_lead_snps_filter$BETA[i]
+  }
+}
+
+# For stayers
+EA3_excl_23andMe_UKB_lead_snps_filter$BETA_updated_s = c(rep(0,n_snps))
+for(i in 1:n_snps){
+  if(EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers[i]>0){
+    EA3_excl_23andMe_UKB_lead_snps_filter$BETA_updated_s[i]=EA3_excl_23andMe_UKB_lead_snps_filter$BETA[i]
+  }else{
+    EA3_excl_23andMe_UKB_lead_snps_filter$BETA_updated_s[i]=-1*EA3_excl_23andMe_UKB_lead_snps_filter$BETA[i]
+  }
+}
+
+#   making the movers/stayers betas positive
+EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers_abs = abs(EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers)
+
+EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers_abs = abs(EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers)
+
+# Adjusting data so betas on x-axis are all positive and changing the sign for betas on y-axis if they were originally different signs for betas on x-axis
+
+# For movers
+#movers=x-axis, stayers=y-axis
+EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers_ms = c(rep(0,n_snps))
+for(i in 1:n_snps){
+  if(EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers[i]>0){
+    EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers_ms[i]=EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers[i]
+  }else{
+    EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers_ms[i]=-1*EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers[i]
+  }
+}
+
+
+# For stayers
+#stayers=x-axis, movers=y-axis
+EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers_sm = c(rep(0,n_snps))
+for(i in 1:n_snps){
+  if(EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers[i]>0){
+    EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers_sm[i]=EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers[i]
+  }else{
+    EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers_sm[i]=-1*EA3_excl_23andMe_UKB_lead_snps_filter$beta_movers[i]
+  }
+}
+
+#Adding Heterozygosity column pq=p(1-p)
+EA3_excl_23andMe_UKB_lead_snps_filter$pq=EA3_excl_23andMe_UKB_lead_snps_filter$EAF*(1-EA3_excl_23andMe_UKB_lead_snps_filter$EAF)
+
+
+# making a column to plot points of different colors based on P-value in EA3 dataset
+EA3_excl_23andMe_UKB_lead_snps_filter$Color="red"
+EA3_excl_23andMe_UKB_lead_snps_filter$Color[EA3_excl_23andMe_UKB_lead_snps_filter$P>10^(-12)]="yellow"
+EA3_excl_23andMe_UKB_lead_snps_filter$Color[EA3_excl_23andMe_UKB_lead_snps_filter$P>10^(-9)]="blue"
+
+
+# making a column to plot points of different colors based on magnitude of betas in EA3 dataset
+EA3_excl_23andMe_UKB_lead_snps_filter$ColorB="blue"
+EA3_excl_23andMe_UKB_lead_snps_filter$ColorB[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs>0.0165]="yellow"
+EA3_excl_23andMe_UKB_lead_snps_filter$ColorB[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs>0.02]="red"
+
+# making a column to plot points of different colors based on p(1-p) in EA3 dataset
+EA3_excl_23andMe_UKB_lead_snps_filter$Colorpq="red"
+EA3_excl_23andMe_UKB_lead_snps_filter$Colorpq[EA3_excl_23andMe_UKB_lead_snps_filter$pq>0.21]="yellow"
+EA3_excl_23andMe_UKB_lead_snps_filter$Colorpq[EA3_excl_23andMe_UKB_lead_snps_filter$pq>0.24]="blue"
+
+#Filtering out extreme value
+EA3_filter2 = EA3_excl_23andMe_UKB_lead_snps_filter[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs<=0.2,]
+EA3_filter1 = EA3_filter2[EA3_filter2$beta_stayers_abs<=0.2,]
+EA3_filter = EA3_filter1[EA3_filter1$beta_movers_abs<=0.2,]
+
+#Finding the particular extreme value
+#Filtering out extreme value
+EA3_outlier = EA3_excl_23andMe_UKB_lead_snps_filter[EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers_abs>0.2,]
+
+```
+
+
+```{r}
+require(gridExtra)
+require(ggpubr)
+require(r2symbols)
+```
+
+Beginning of Plotting
+```{r}
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot1m.png",
+width=1500, height=1100)
+
+scatterplot1m=ggplot(EA3_filter, aes(x=BETA_abs, y=beta_movers_updated))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("EA3 Betas") +ylab("Movers Betas") +geom_abline(slope=1,intercept=0) +  theme_grey(base_size = 22)
+
+xdensity1m=ggplot(EA3_filter,aes(x=BETA_abs))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity1m=ggplot(EA3_filter,aes(y=beta_movers_updated))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity1m+ rremove("xlab"),blankplot,scatterplot1m,ydensity1m+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+fit1=lm(beta_movers_updated~BETA_abs, data=EA3_filter)
+summary(fit1)
+```
+
+```{r}
+#   plotting the EA3 betas vs the movers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot1.png",
+width=1500, height=1100)
+
+scatterplot1=ggplot(EA3_filter, aes(x=BETA_abs, y=beta_movers_updated, col=Color))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("EA3 Betas") +ylab("Movers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("P<10^-12","10^-12<P<10^-9","10^-9<P<10^-8"))+geom_abline(slope=1,intercept=0)+  theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity1=ggplot(EA3_filter,aes(x=BETA_abs,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity1=ggplot(EA3_filter,aes(y=beta_movers_updated,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity1+ rremove("xlab"),blankplot,scatterplot1,ydensity1+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+```
+
+```{r}
+#   plotting the EA3 betas vs the movers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot1B.png",
+width=1500, height=1100)
+
+scatterplot1B=ggplot(EA3_filter, aes(x=BETA_abs, y=beta_movers_updated, col=ColorB))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("EA3 Betas") +ylab("Movers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("0.02<beta<0.035","0.0165<beta<0.02","beta<0.0165"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity1B=ggplot(EA3_filter,aes(x=BETA_abs,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity1B=ggplot(EA3_filter,aes(y=beta_movers_updated,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity1B+ rremove("xlab"),blankplot,scatterplot1B,ydensity1B+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+```
+
+```{r}
+#   plotting the EA3 betas vs the movers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot1pq.png",
+width=1500, height=1100)
+
+scatterplot1pq=ggplot(EA3_filter, aes(x=BETA_abs, y=beta_movers_updated, col=Colorpq))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("EA3 Betas") +ylab("Movers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("pq<0.21", "0.21<pq<0.24", "0.24<pq"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity1pq=ggplot(EA3_filter,aes(x=BETA_abs,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity1pq=ggplot(EA3_filter,aes(y=beta_movers_updated,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity1pq+ rremove("xlab"),blankplot,scatterplot1pq,ydensity1pq+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+```
+
+```{r}
+#   plotting the EA3 betas vs the stayers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot2m.png",width=1500, height=1100)
+
+scatterplot2m=ggplot(EA3_filter, aes(x=BETA_abs, y=beta_stayers_updated))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("EA3 Betas") +ylab("Stayers Betas") +geom_abline(slope=1,intercept=0) +  theme_grey(base_size = 22)
+
+xdensity2m=ggplot(EA3_filter,aes(x=BETA_abs))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity2m=ggplot(EA3_filter,aes(y=beta_stayers_updated))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity2m+ rremove("xlab"),blankplot,scatterplot2m,ydensity2m+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+fit2=lm(beta_stayers_updated~BETA_abs, data=EA3_filter)
+summary(fit2)
+```
+
+```{r}
+#   plotting the EA3 betas vs the stayers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot2.png",
+width=1500, height=1100)
+
+scatterplot2=ggplot(EA3_filter, aes(x=BETA_abs, y=beta_stayers_updated, col=Color))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("EA3 Betas") +ylab("Stayers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("P<10^-12","10^-12<P<10^-9","10^-9<P<10^-8"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity2=ggplot(EA3_filter,aes(x=BETA_abs,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity2=ggplot(EA3_filter,aes(y=beta_stayers_updated,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity2+ rremove("xlab"),blankplot,scatterplot2,ydensity2+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+
+```
+
+```{r}
+#   plotting the EA3 betas vs the stayers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot2B.png",
+width=1500, height=1100)
+
+scatterplot2B=ggplot(EA3_filter, aes(x=BETA_abs, y=beta_stayers_updated, col=ColorB))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("EA3 Betas") +ylab("Stayers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("0.02<beta<0.035","0.0165<beta<0.02","beta<0.0165"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity2B=ggplot(EA3_filter,aes(x=BETA_abs,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity2B=ggplot(EA3_filter,aes(y=beta_stayers_updated,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity2B+ rremove("xlab"),blankplot,scatterplot2B,ydensity2B+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+
+```
+
+
+
+```{r}
+#   plotting the EA3 betas vs the stayers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot2pq.png",
+width=1500, height=1100)
+
+scatterplot2pq=ggplot(EA3_filter, aes(x=BETA_abs, y=beta_stayers_updated, col=Colorpq))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("EA3 Betas") +ylab("Stayers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("pq<0.21", "0.21<pq<0.24", "0.24<pq"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity2pq=ggplot(EA3_filter,aes(x=BETA_abs,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity2pq=ggplot(EA3_filter,aes(y=beta_stayers_updated,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity2pq+ rremove("xlab"),blankplot,scatterplot2pq,ydensity2pq+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+
+```
+
+
+```{r}
+#   plotting the EA3 betas vs the movers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot3m.png",
+width=1500, height=1100)
+
+scatterplot3m=ggplot(EA3_filter, aes(x=beta_movers_abs, y=BETA_updated_m))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Movers Betas")  +ylab("EA3 Betas")+geom_abline(slope=1,intercept=0) +  theme_grey(base_size = 22) 
+
+xdensity3m=ggplot(EA3_filter,aes(x=beta_movers_abs))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity3m=ggplot(EA3_filter,aes(y=BETA_updated_m))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity3m+ rremove("xlab"),blankplot,scatterplot3m,ydensity3m+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+fit3=lm(BETA_updated_m~beta_movers_abs, data=EA3_filter)
+summary(fit3)
+```
+
+```{r}
+#   plotting the EA3 betas vs the movers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot3.png",
+width=1500, height=1100)
+
+scatterplot3=ggplot(EA3_filter, aes(x=beta_movers_abs, y=BETA_updated_m, col=Color))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Movers Betas")  +ylab("EA3 Betas")+scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("P<10^-12","10^-12<P<10^-9","10^-9<P<10^-8"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom") 
+
+xdensity3=ggplot(EA3_filter,aes(x=beta_movers_abs,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity3=ggplot(EA3_filter,aes(y=BETA_updated_m,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity3+ rremove("xlab"),blankplot,scatterplot3,ydensity3+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+```
+
+```{r}
+#   plotting the EA3 betas vs the movers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot3B.png",
+width=1500, height=1100)
+
+scatterplot3B=ggplot(EA3_filter, aes(x=beta_movers_abs, y=BETA_updated_m, col=ColorB))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Movers Betas")  +ylab("EA3 Betas")+scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("0.02<beta<0.035","0.0165<beta<0.02","beta<0.0165"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom") 
+
+xdensity3B=ggplot(EA3_filter,aes(x=beta_movers_abs,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity3B=ggplot(EA3_filter,aes(y=BETA_updated_m,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity3B+ rremove("xlab"),blankplot,scatterplot3B,ydensity3B+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+```
+
+```{r}
+#   plotting the EA3 betas vs the movers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot3pq.png",
+width=1500, height=1100)
+
+scatterplot3pq=ggplot(EA3_filter, aes(x=beta_movers_abs, y=BETA_updated_m, col=Colorpq))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Movers Betas")  +ylab("EA3 Betas")+scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("pq<0.21", "0.21<pq<0.24", "0.24<pq"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom") 
+
+xdensity3pq=ggplot(EA3_filter,aes(x=beta_movers_abs,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity3pq=ggplot(EA3_filter,aes(y=BETA_updated_m,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity3pq+ rremove("xlab"),blankplot,scatterplot3pq,ydensity3pq+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+```
+
+
+```{r}
+#   plotting the EA3 betas vs the stayers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot4m.png",
+width=1500, height=1100)
+
+scatterplot4m=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=BETA_updated_s))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas") +ylab("EA3 Betas")+geom_abline(slope=1,intercept=0) +  theme_grey(base_size = 22) 
+
+xdensity4m=ggplot(EA3_filter,aes(x=beta_stayers_abs))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity4m=ggplot(EA3_filter,aes(y=BETA_updated_s))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity4m+ rremove("xlab"),blankplot,scatterplot4m,ydensity4m+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+fit4=lm(BETA_updated_s~beta_stayers_abs, data=EA3_filter)
+summary(fit4)
+```
+
+
+```{r}
+#   plotting the EA3 betas vs the stayers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot4.png",
+width=1500, height=1100)
+
+scatterplot4=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=BETA_updated_s, col=Color))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas") +ylab("EA3 Betas")+scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("P<10^-12","10^-12<P<10^-9","10^-9<P<10^-8"))+geom_abline(slope=1,intercept=0)+  theme_grey(base_size = 22)+theme_grey(base_size = 22)+theme(legend.position = "bottom") 
+
+xdensity4=ggplot(EA3_filter,aes(x=beta_stayers_abs,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity4=ggplot(EA3_filter,aes(y=BETA_updated_s,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity4+ rremove("xlab"),blankplot,scatterplot4,ydensity4+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+
+```
+
+```{r}
+#   plotting the EA3 betas vs the stayers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot4B.png",
+width=1500, height=1100)
+
+scatterplot4B=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=BETA_updated_s, col=ColorB))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas") +ylab("EA3 Betas")+scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("0.02<beta<0.035","0.0165<beta<0.02","beta<0.0165"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom") 
+
+xdensity4B=ggplot(EA3_filter,aes(x=beta_stayers_abs,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity4B=ggplot(EA3_filter,aes(y=BETA_updated_s,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity4B+ rremove("xlab"),blankplot,scatterplot4B,ydensity4B+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+
+```
+
+```{r}
+#   plotting the EA3 betas vs the stayers betas
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot4pq.png",
+width=1500, height=1100)
+
+scatterplot4pq=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=BETA_updated_s, col=Colorpq))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas") +ylab("EA3 Betas")+scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("pq<0.21", "0.21<pq<0.24", "0.24<pq"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom") 
+
+xdensity4pq=ggplot(EA3_filter,aes(x=beta_stayers_abs,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity4pq=ggplot(EA3_filter,aes(y=BETA_updated_s,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity4pq+ rremove("xlab"),blankplot,scatterplot4pq,ydensity4pq+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+
+
+```
+
+```{r}
+#plotting x=movers y=stayers
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot5m.png",
+width=1500, height=1100)
+
+scatterplot5m=ggplot(EA3_filter, aes(x=beta_movers_abs, y=beta_stayers_ms))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Movers Betas")  +ylab("Stayers Betas") +geom_abline(slope=1,intercept=0) +  theme_grey(base_size = 22)
+
+xdensity5m=ggplot(EA3_filter,aes(x=beta_movers_abs))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity5m=ggplot(EA3_filter,aes(y=beta_stayers_ms))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity5m+ rremove("xlab"),blankplot,scatterplot5m,ydensity5m+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+fit5=lm(beta_stayers_ms~beta_movers_abs, data=EA3_filter)
+summary(fit5)
+```
+
+```{r}
+#plotting x=movers y=stayers
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot5.png",
+width=1500, height=1100)
+
+scatterplot5=ggplot(EA3_filter, aes(x=beta_movers_abs, y=beta_stayers_ms, col=Color))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Movers Betas")  +ylab("Stayers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("P<10^-12","10^-12<P<10^-9","10^-9<P<10^-8"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity5=ggplot(EA3_filter,aes(x=beta_movers_abs,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity5=ggplot(EA3_filter,aes(y=beta_stayers_ms,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity5+ rremove("xlab"),blankplot,scatterplot5,ydensity5+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+```
+
+```{r}
+#plotting x=movers y=stayers
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot5B.png",
+width=1500, height=1100)
+
+scatterplot5B=ggplot(EA3_filter, aes(x=beta_movers_abs, y=beta_stayers_ms, col=ColorB))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Movers Betas")  +ylab("Stayers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("0.02<beta<0.035","0.0165<beta<0.02","beta<0.0165"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity5B=ggplot(EA3_filter,aes(x=beta_movers_abs,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity5B=ggplot(EA3_filter,aes(y=beta_stayers_ms,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity5B+ rremove("xlab"),blankplot,scatterplot5B,ydensity5B+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+```
+
+```{r}
+#plotting x=movers y=stayers
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot5pq.png",
+width=1500, height=1100)
+
+scatterplot5pq=ggplot(EA3_filter, aes(x=beta_movers_abs, y=beta_stayers_ms, col=Colorpq))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Movers Betas")  +ylab("Stayers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("pq<0.21", "0.21<pq<0.24", "0.24<pq"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity5pq=ggplot(EA3_filter,aes(x=beta_movers_abs,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none")  
+
+ydensity5pq=ggplot(EA3_filter,aes(y=beta_stayers_ms,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity5pq+ rremove("xlab"),blankplot,scatterplot5pq,ydensity5pq+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+```
+
+```{r}
+#plotting x=stayers vs y=movers
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot6m.png",
+width=1500, height=1100)
+scatterplot6m=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=beta_movers_sm))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas") +ylab("Movers Betas") +geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)
+
+xdensity6m=ggplot(EA3_filter,aes(x=beta_stayers_abs))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity6m=ggplot(EA3_filter,aes(y=beta_movers_sm))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity6m+ rremove("xlab"),blankplot,scatterplot6m,ydensity6m+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+fit6=lm(beta_movers_sm~beta_stayers_abs, data=EA3_filter)
+summary(fit6)
+```
+
+```{r}
+#plotting x=stayers vs y=movers
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot6.png",
+width=1500, height=1100)
+
+scatterplot6=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=beta_movers_sm, col=Color))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas") +ylab("Movers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("P<10^-12","10^-12<P<10^-9","10^-9<P<10^-8"))+geom_abline(slope=1,intercept=0)+  theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity6=ggplot(EA3_filter,aes(x=beta_stayers_abs,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity6=ggplot(EA3_filter,aes(y=beta_movers_sm,fill=Color))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity6+ rremove("xlab"),blankplot,scatterplot6,ydensity6+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+```
+
+```{r}
+#plotting x=stayers vs y=movers
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot6B.png",
+width=1500, height=1100)
+
+scatterplot6B=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=beta_movers_sm, col=ColorB))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas") +ylab("Movers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("0.02<beta<0.035","0.0165<beta<0.02","beta<0.0165"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity6B=ggplot(EA3_filter,aes(x=beta_stayers_abs,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity6B=ggplot(EA3_filter,aes(y=beta_movers_sm,fill=ColorB))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity6B+ rremove("xlab"),blankplot,scatterplot6B,ydensity6B+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+```
+
+```{r}
+#plotting x=stayers vs y=movers
+png(file="C:/Users/achoo/Documents/Arbel_Research/plot6pq.png",
+width=1500, height=1100)
+
+scatterplot6pq=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=beta_movers_sm, col=Colorpq))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas") +ylab("Movers Betas") +scale_color_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"), labels=c("pq<0.21", "0.21<pq<0.24", "0.24<pq"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")
+
+xdensity6pq=ggplot(EA3_filter,aes(x=beta_stayers_abs,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+ydensity6pq=ggplot(EA3_filter,aes(y=beta_movers_sm,fill=Colorpq))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("red","yellow", "blue"), values=c("red","gold","blue"))+theme_grey(base_size = 22)+theme(legend.position = "none") 
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity6pq+ rremove("xlab"),blankplot,scatterplot6pq,ydensity6pq+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+```
+
+
+```{r}
+# making a column to plot points of different colors based on P-value in EA3 dataset
+EA3_excl_23andMe_UKB_lead_snps_filter$Pval="firebrick4"
+EA3_excl_23andMe_UKB_lead_snps_filter$Pval[EA3_excl_23andMe_UKB_lead_snps_filter$P>(8.223*10^(-17))]="lightpink2"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Pval[EA3_excl_23andMe_UKB_lead_snps_filter$P>(3.402*10^(-13))]="orange"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Pval[EA3_excl_23andMe_UKB_lead_snps_filter$P>(3.697*10^(-11))]="gold"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Pval[EA3_excl_23andMe_UKB_lead_snps_filter$P>(2.001*10^(-10))]="olivedrab4"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Pval[EA3_excl_23andMe_UKB_lead_snps_filter$P>(7.185*10^(-10))]="palegreen1"
+
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Pval[EA3_excl_23andMe_UKB_lead_snps_filter$P>(1.903*10^(-9))]="blue"
+
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Pval[EA3_excl_23andMe_UKB_lead_snps_filter$P>(4.039*10^(-9))]="plum3"
+
+
+# making a column to plot points of different colors based on magnitude of betas in EA3 dataset
+EA3_excl_23andMe_UKB_lead_snps_filter$Beta="plum3"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Beta[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs>(0.0155281)]="blue"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Beta[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs>(0.0161373)]="palegreen1"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Beta[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs>(0.0168845)]="olivedrab4"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Beta[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs>(0.0184174)]="gold"
+
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Beta[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs>(0.0198712)]="orange"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Beta[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs>(0.0212297)]="lightpink2"
+
+EA3_excl_23andMe_UKB_lead_snps_filter$Beta[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs>(0.0226005)]="firebrick4"
+
+#Filtering out extreme value
+EA3_filter2 = EA3_excl_23andMe_UKB_lead_snps_filter[EA3_excl_23andMe_UKB_lead_snps_filter$BETA_abs<=0.2,]
+EA3_filter1 = EA3_filter2[EA3_filter2$beta_stayers_abs<=0.2,]
+EA3_filter = EA3_filter1[EA3_filter1$beta_movers_abs<=0.2,]
+
+#Finding the particular extreme value
+#Filtering out extreme value
+EA3_outlier = EA3_excl_23andMe_UKB_lead_snps_filter[EA3_excl_23andMe_UKB_lead_snps_filter$beta_stayers_abs>0.2,]
+
+```
+
+```{r}
+beta_data=EA3_filter[order(EA3_filter$P),]
+View(beta_data[2525,])
+
+#"8.223*10^(-17)>P>2.469*10^(-24)", "3.402*10^(-13)>P>8.223*10^(-17)", "3.697*10^(-11)>P>3.402*10^(-13)", "2.001*10^(-10)>P>3.697*10^(-11)", "7.185*10^(-10)>P>2.001*10^(-10)", "1.903*10^(-9)>P>7.185*10^(-10)", "4.039*10^(-9)>P>1.903*10^(-9)", "9.974*10^(-9)>P>4.039*10^(-9)"
+```
+
+```{r}
+#plotting x=stayers vs y=movers
+png(file="C:/Users/achoo/Documents/Arbel_Research/aPlot6m.png",
+width=1500, height=1100)
+scatterplot6m=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=beta_movers_sm))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas")+ylab("Movers Betas")+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)
+
+xdensity6m=ggplot(EA3_filter,aes(x=beta_stayers_abs))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none")
+
+ydensity6m=ggplot(EA3_filter,aes(y=beta_movers_sm))+geom_density(alpha=0.5)+theme_grey(base_size = 22)+theme(legend.position = "none")
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity6m,blankplot,scatterplot6m,ydensity6m,ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+fit6=rlm(beta_movers_sm~beta_stayers_abs, data=EA3_filter)
+summary(fit6)
+```
+
+
+
+```{r}
+#plotting x=stayers vs y=movers
+png(file="C:/Users/achoo/Documents/Arbel_Research/aPlot6.png",
+width=1500, height=1100)
+scatterplot6=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=beta_movers_sm, col=Pval))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas")+ylab("Movers Betas")+scale_color_manual(breaks=c("firebrick4", "lightpink2", "orange", "gold", "olivedrab4", "palegreen1", "blue", "plum3"), values=c("firebrick4", "lightpink2", "orange", "gold", "olivedrab4", "palegreen1", "blue", "plum3"), labels=c("8.2e-17-2.5e-24", "3.4e-13-8.2e-17", "3.7e-11-3.4e-13", "2.0e-10-3.7e-11", "7.2e-10-2.0e-10", "1.9e-9-7.2e-10", "4.0e-9-1.9e-9", "1.0e-8-4.0e-9"
+))+geom_abline(slope=1,intercept=0)+  theme_grey(base_size = 22)+theme(legend.position = "bottom")+ylim(0,0.18)
+
+xdensity6=ggplot(EA3_filter,aes(x=beta_stayers_abs,fill=Pval))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("firebrick4", "lightpink2", "orange", "gold", "olivedrab4", "palegreen1", "blue", "plum3"), values=c("firebrick4", "lightpink2", "orange", "gold", "olivedrab4", "palegreen1", "blue", "plum3"))+theme_grey(base_size = 22)+theme(legend.position = "none")
+
+ydensity6=ggplot(EA3_filter,aes(y=beta_movers_sm,fill=Pval))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("firebrick4", "lightpink2", "orange", "gold", "olivedrab4", "palegreen1", "blue", "plum3"), values=c("firebrick4", "lightpink2", "orange", "gold", "olivedrab4", "palegreen1", "blue", "plum3"))+theme_grey(base_size = 22)+theme(legend.position = "none")+ylim(0,0.18)
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity6+ rremove("xlab"),blankplot,scatterplot6,ydensity6+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+```
+
+
+
+```{r}
+#plotting x=stayers vs y=movers
+png(file="C:/Users/achoo/Documents/Arbel_Research/aPlot6B.png",
+width=1500, height=1100)
+scatterplot6=ggplot(EA3_filter, aes(x=beta_stayers_abs, y=beta_movers_sm, col=Beta))+geom_point(alpha=0.4)+geom_smooth(method="lm",se=F)+xlab("Stayers Betas")+ylab("Movers Betas")+scale_color_manual(breaks=c("plum3", "blue", "palegreen1", "olivedrab4", "gold", "orange", "lightpink2", "firebrick4"), values=c("plum3", "blue", "palegreen1", "olivedrab4", "gold", "orange", "lightpink2", "firebrick4"), labels=c("0.0147-0.0155","0.0155-0.0161","0.0161-0.0169","0.0169-0.0184","0.0184-0.0199","0.0199-0.0212","0.0212-0.0226","0.0226-0.0344"))+geom_abline(slope=1,intercept=0)+ theme_grey(base_size = 22)+theme(legend.position = "bottom")+ylim(0,0.18)
+
+xdensity6=ggplot(EA3_filter,aes(x=beta_stayers_abs,fill=Beta))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("plum3", "blue", "palegreen1", "olivedrab4", "gold", "orange", "lightpink2", "firebrick4"), values=c("plum3", "blue", "palegreen1", "olivedrab4", "gold", "orange", "lightpink2", "firebrick4"))+theme_grey(base_size = 22)+theme(legend.position = "none")
+
+ydensity6=ggplot(EA3_filter,aes(y=beta_movers_sm,fill=Beta))+geom_density(alpha=0.5)+scale_fill_manual(breaks=c("plum3", "blue", "palegreen1", "olivedrab4", "gold", "orange", "lightpink2", "firebrick4"), values=c("plum3", "blue", "palegreen1", "olivedrab4", "gold", "orange", "lightpink2", "firebrick4"))+theme_grey(base_size = 22)+theme(legend.position = "none")+ylim(0,0.18)
+
+blankplot = ggplot()+geom_blank(aes(1,1))+
+  theme(plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank()
+     )
+
+grid.arrange(xdensity6+ rremove("xlab"),blankplot,scatterplot6,ydensity6+ rremove("ylab"),ncol=2, nrow=2, widths=c(4, 1.4), heights=c(1.4, 4))
+dev.off()
+```
