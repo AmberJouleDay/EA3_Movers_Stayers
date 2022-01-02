@@ -1,4 +1,4 @@
-# EA3_Movers_Stayers
+# EA3 Movers Stayers
 Comparing effect sizes
 ![aPlot6m](https://user-images.githubusercontent.com/85945158/147884759-f0d401ef-ca0a-4818-970d-dd51462b5a19.png)
 ![aPlot6](https://user-images.githubusercontent.com/85945158/147884760-57bb0428-48f1-4b63-b6cc-27c30c51cafa.png)
